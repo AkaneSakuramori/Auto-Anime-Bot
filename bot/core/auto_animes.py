@@ -32,7 +32,14 @@ async def fetch_animes():
     await rep.report("Bot is ready to process direct file uploads!", "info")
     while True:
         await asleep(60)  # Sleep to prevent high CPU usage
-        # The actual processing will be triggered by file uploads
+
+async def get_animes(name, force=False):
+    """
+    Legacy function maintained for compatibility.
+    Now redirects to process_file for direct file handling.
+    """
+    await rep.report("Using direct file processing instead of anime fetching", "info")
+    return None
 
 async def process_file(message, name=None):
     try:
