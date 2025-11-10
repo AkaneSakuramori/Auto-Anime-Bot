@@ -1,7 +1,6 @@
 from json import loads as jloads
 from os import path as ospath, execl
 from sys import executable
-
 from aiohttp import ClientSession
 from bot import Var, bot, ffQueue
 from bot.core.text_utils import TextEditor
@@ -26,11 +25,3 @@ async def upcoming_animes():
         await ffQueue.join()
     await rep.report("Auto Restarting..!!", "info")
     execl(executable, executable, "-m", "bot")
-
-async def update_shdr(name, link):
-    if TD_SCHR is not None:
-        TD_lines = TD_SCHR.text.split('\n')
-        for i, line in enumerate(TD_lines):
-            if line.startswith(f"📌 {name}"):
-                TD_lines[i+2] = f"    • **Status :** ✅ __Uploaded__\n    • **Link :** {link}"
-        await TD_SCHR.edit("\n".join(TD_lines))
