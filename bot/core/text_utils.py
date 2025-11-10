@@ -4,8 +4,7 @@ from random import choice
 from asyncio import sleep as asleep
 from aiohttp import ClientSession
 from anitopy import parse
-from re import sub as re_sub
-from re import search as re_search
+import re
 
 from bot import Var, bot
 from .ffencoder import ffargs
@@ -112,6 +111,48 @@ class TextEditor:
         self.__name = name or ""
         self.adata = {}
         self.pdata = parse(self.__name or "")
+        self._parsed = self._parse_filename(self.__name or "")
+
+    def _parse_filename(self, original):
+        parsed = {}
+        parsed['original'] = original
+        tag_match = re.search(r'@[\w\-]+', original)
+        parsed['tag'] = tag_match.group(0) if tag_match else ""
+        se_match = re.search(r'\[ *S?(\d{1,2}) *[-–—xX] *E?(\d{1,3}) *\]', original, flags=re.IGNORECASE)
+        if se_match:
+            season = se_match.group(1).zfill(2)
+            ep = se_match.group(2).lstrip("0") or "0"
+            parsed['season_episode'] = f"S{season}-E{ep}"
+        else:
+            epnum = self.pdata.get("episode_number")
+            ani_s = self.pdata.get("anime_season")
+            if epnum:
+                season = "01"
+                if isinstance(ani_s, list):
+                    season = str(ani_s[-1]).zfill(2)
+                elif ani_s:
+                    season = str(ani_s).zfill(2)
+                parsed['season_episode'] = f"S{season}-E{epnum}"
+            else:
+                parsed['season_episode'] = ""
+        audio = ""
+        if re.search(r'\bmulti(-audio|\s?audio|)\b', original, flags=re.IGNORECASE) or 'multi-audio' in original.lower():
+            audio = "Multi"
+        elif re.search(r'\bdual\b', original, flags=re.IGNORECASE):
+            audio = "Dual"
+        elif re.search(r'\bsub\b', original, flags=re.IGNORECASE):
+            audio = "Sub"
+        else:
+            audio = "Sub"
+        parsed['audio'] = audio
+        title = self.pdata.get("anime_title") or original
+        title = re.sub(r'\[.*?\]', ' ', title)
+        title = re.sub(r'\(.*?\)', ' ', title)
+        title = re.sub(r'@[\w\-]+', ' ', title)
+        title = title.replace("_", " ").replace(".", " ").strip()
+        title = re.sub(r'\s{2,}', ' ', title).strip()
+        parsed['title'] = title
+        return parsed
 
     @handle_logs
     async def load_anilist(self):
@@ -141,11 +182,11 @@ class TextEditor:
         anime_year = self.pdata.get("anime_year")
         if not anime_name:
             anime_name = self.__name
-        anime_name = re_sub(r"\[.*?\]", " ", anime_name)
-        anime_name = re_sub(r"\(.*?\)", " ", anime_name)
+        anime_name = re.sub(r"\[.*?\]", " ", anime_name)
+        anime_name = re.sub(r"\(.*?\)", " ", anime_name)
         anime_name = anime_name.replace("_", " ").replace(".", " ").strip()
-        anime_name = re_sub(r"@[\w-]+", "", anime_name).strip()
-        anime_name = re_sub(r"\s{2,}", " ", anime_name).strip()
+        anime_name = re.sub(r"@[\w\-]+", "", anime_name).strip()
+        anime_name = re.sub(r"\s{2,}", " ", anime_name).strip()
         pname = anime_name
         if not no_s and self.pdata.get("episode_number") and anime_season:
             pname = f"{pname} {anime_season}"
@@ -162,20 +203,26 @@ class TextEditor:
 
     @handle_logs
     async def get_upname(self, qual=""):
-        anime_name = self.pdata.get("anime_title") or ""
-        codec = "HEVC" if "libx265" in ffargs.get(qual, "") else "AV1" if "libaom-av1" in ffargs.get(qual, "") else ""
-        lang = "Multi-Audio" if "multi-audio" in self.__name.lower() else "Sub"
-        ani_s = self.pdata.get('anime_season', '01')
-        if isinstance(ani_s, list):
-            anime_season = str(ani_s[-1])
-        else:
-            anime_season = str(ani_s)
-        ep_no = self.pdata.get("episode_number")
-        titles = self.adata.get('title', {}) or {}
-        title_main = titles.get('english') or titles.get('romaji') or titles.get('native') or anime_name
-        if anime_name and ep_no:
-            return f"[S{anime_season}-E{ep_no}] {title_main} [{codec}] [{lang}]"
-        return f"{title_main} [{codec}] [{lang}]"
+        series = self._parsed.get('title') or (self.adata.get('title', {}) or {}).get('english') or (self.adata.get('title', {}) or {}).get('romaji') or self._parsed.get('original') or "Unknown"
+        season_ep = self._parsed.get('season_episode') or ""
+        audio = self._parsed.get('audio') or "Sub"
+        tag = self._parsed.get('tag') or ""
+        res = f"{qual}p" if qual and qual.isdigit() else qual
+        parts = []
+        parts.append(series.strip())
+        if season_ep:
+            parts.append(f"[{season_ep}]")
+        if res:
+            parts.append(f"[{res}]")
+        if audio:
+            parts.append(f"[{audio}]")
+        filename = " ".join(parts)
+        if tag:
+            filename = f"{filename} {tag}"
+        filename = filename.strip()
+        if not filename.lower().endswith(".mkv"):
+            filename = f"{filename}.mkv"
+        return filename
 
     @handle_logs
     async def get_caption(self):
@@ -184,7 +231,7 @@ class TextEditor:
         ed = self.adata.get('endDate', {}) or {}
         enddate = f"{month_name[ed['month']]} {ed['day']}, {ed['year']}" if ed.get('day') and ed.get('year') else ""
         titles = self.adata.get("title", {}) or {}
-        title_text = titles.get('english') or titles.get('romaji') or titles.get('native') or (self.pdata.get("anime_title") or self.__name)
+        title_text = titles.get('english') or titles.get('romaji') or titles.get('native') or (self.pdata.get("anime_title") or self._parsed.get('title') or self.__name)
         genres = self.adata.get("genres") or []
         genres_list = ", ".join((GENRES_EMOJI.get(g, "") + " " + g).strip() for g in genres) or "N/A"
         avg_score = f"{self.adata.get('averageScore')}%" if self.adata.get('averageScore') else "N/A"
@@ -200,4 +247,4 @@ class TextEditor:
             source=self.adata.get("source") or "Subsplease",
             ep_no=ep_no,
             cred=Var.BRAND_UNAME
-      )
+        )
