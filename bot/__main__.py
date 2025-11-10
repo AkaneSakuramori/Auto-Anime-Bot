@@ -1,4 +1,4 @@
-from asyncio import create_task, create_subprocess_exec, create_subprocess_shell, run as asyrun, all_tasks, gather, sleep as asleep
+from asyncio import create_task, create_subprocess_exec, create_subprocess_shell, run as asyrun, gather, sleep as asleep, all_tasks as get_all_tasks
 from aiofiles import open as aiopen
 from pyrogram import idle
 from pyrogram.filters import command, user
@@ -43,12 +43,12 @@ async def preload_chats():
 
 @bot.on_message(command('restart') & user(Var.ADMINS))
 @new_task
-async def restart_handler(client, message):
+async def restart_cmd(client, message):
     rmessage = await message.reply('<i>Restarting...</i>')
     if sch.running:
         sch.shutdown(wait=False)
     await clean_up()
-    if len(ffpids_cache) != 0:
+    if len(ffpids_cache) != 0: 
         for pid in ffpids_cache:
             try:
                 LOGS.info(f"Process ID : {pid}")
@@ -61,7 +61,7 @@ async def restart_handler(client, message):
         await f.write(f"{rmessage.chat.id}\n{rmessage.id}\n")
     execl(executable, executable, "-m", "bot")
 
-async def check_restart_msg():
+async def check_restart():
     if ospath.isfile(".restartmsg"):
         with open(".restartmsg") as f:
             chat_id, msg_id = map(int, f)
@@ -69,7 +69,7 @@ async def check_restart_msg():
             await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="<i>Restarted !</i>")
         except Exception as e:
             LOGS.error(e)
-
+            
 async def queue_loop():
     LOGS.info("Queue Loop Started !!")
     while True:
@@ -86,7 +86,7 @@ async def main():
     sch.add_job(upcoming_animes, "cron", hour=0, minute=30)
     await bot.start()
     await preload_chats()
-    await check_restart_msg()
+    await check_restart()
     LOGS.info('Auto Anime Bot Started!')
     sch.start()
     bot_loop.create_task(queue_loop())
@@ -94,10 +94,10 @@ async def main():
     await idle()
     LOGS.info('Auto Anime Bot Stopped!')
     await bot.stop()
-    for task in all_tasks():
+    for task in get_all_tasks():
         task.cancel()
     await clean_up()
     LOGS.info('Finished AutoCleanUp !!')
-
+    
 if __name__ == '__main__':
     bot_loop.run_until_complete(main())
