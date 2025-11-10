@@ -85,6 +85,16 @@ async def pause_fetch(client, message):
     ani_cache['fetch_animes'] = True
     await sendMessage(message, "`Successfully Resumed Fetching Animes...`")
 
+@bot.on_message(filters.document & filters.private & user(Var.ADMINS))
+@new_task  
+async def process_direct_file(client, message):
+    if message.document.file_name.endswith(('.mkv', '.mp4')):
+        temp = await sendMessage(message, "<i>Processing file...</i>")
+        await process_file(message)
+        await temp.edit("File processed successfully!")
+    else:
+        await sendMessage(message, "Please send a valid video file (.mkv or .mp4)")
+        
 @bot.on_message(command('log') & private & user(Var.ADMINS))
 @new_task
 async def _log(client, message):
