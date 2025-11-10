@@ -1,4 +1,4 @@
-from asyncio import create_task, create_subprocess_exec, create_subprocess_shell, run as asyrun, gather, sleep as asleep, all_tasks as get_all_tasks
+from asyncio import create_task, create_subprocess_exec, create_subprocess_shell, run as asyrun, all_tasks, gather, sleep as asleep
 from aiofiles import open as aiopen
 from pyrogram import idle
 from pyrogram.filters import command, user
@@ -11,6 +11,7 @@ from bot import bot, Var, bot_loop, sch, LOGS, ffQueue, ffLock, ffpids_cache, ff
 from bot.core.auto_animes import fetch_animes
 from bot.core.func_utils import clean_up, new_task, editMessage
 from bot.modules.up_posts import upcoming_animes
+
 
 async def preload_chats():
     chat_ids = []
@@ -30,25 +31,26 @@ async def preload_chats():
     if Var.FSUB_CHATS:
         chat_ids.extend(Var.FSUB_CHATS)
 
-    LOGS.info(f"🔄 Preloading {len(chat_ids)} chat(s) for peer cache...")  
-    for cid in chat_ids:  
-        try:  
-            await bot.get_chat(int(cid))  
-            LOGS.info(f"✅ Cached chat: {cid}")  
-        except (ChatIdInvalid, ChannelInvalid):  
-            LOGS.error(f"❌ Invalid or inaccessible chat: {cid}")  
-        except Exception as e:  
-            LOGS.error(f"⚠️ Failed to preload {cid}: {e}")  
+    LOGS.info(f"🔄 Preloading {len(chat_ids)} chat(s) for peer cache...")
+    for cid in chat_ids:
+        try:
+            await bot.get_chat(int(cid))
+            LOGS.info(f"✅ Cached chat: {cid}")
+        except (ChatIdInvalid, ChannelInvalid):
+            LOGS.error(f"❌ Invalid or inaccessible chat: {cid}")
+        except Exception as e:
+            LOGS.error(f"⚠️ Failed to preload {cid}: {e}")
         await asleep(1)
+
 
 @bot.on_message(command('restart') & user(Var.ADMINS))
 @new_task
-async def restart_cmd(client, message):
+async def restart(client, message):
     rmessage = await message.reply('<i>Restarting...</i>')
     if sch.running:
         sch.shutdown(wait=False)
     await clean_up()
-    if len(ffpids_cache) != 0: 
+    if len(ffpids_cache) != 0:
         for pid in ffpids_cache:
             try:
                 LOGS.info(f"Process ID : {pid}")
@@ -61,7 +63,8 @@ async def restart_cmd(client, message):
         await f.write(f"{rmessage.chat.id}\n{rmessage.id}\n")
     execl(executable, executable, "-m", "bot")
 
-async def check_restart():
+
+async def restart():
     if ospath.isfile(".restartmsg"):
         with open(".restartmsg") as f:
             chat_id, msg_id = map(int, f)
@@ -69,7 +72,8 @@ async def check_restart():
             await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="<i>Restarted !</i>")
         except Exception as e:
             LOGS.error(e)
-            
+
+
 async def queue_loop():
     LOGS.info("Queue Loop Started !!")
     while True:
@@ -82,11 +86,12 @@ async def queue_loop():
                 ffQueue.task_done()
         await asleep(10)
 
+
 async def main():
     sch.add_job(upcoming_animes, "cron", hour=0, minute=30)
     await bot.start()
     await preload_chats()
-    await check_restart()
+    await restart()
     LOGS.info('Auto Anime Bot Started!')
     sch.start()
     bot_loop.create_task(queue_loop())
@@ -94,10 +99,11 @@ async def main():
     await idle()
     LOGS.info('Auto Anime Bot Stopped!')
     await bot.stop()
-    for task in get_all_tasks():
+    for task in all_tasks():
         task.cancel()
     await clean_up()
     LOGS.info('Finished AutoCleanUp !!')
-    
+
+
 if __name__ == '__main__':
     bot_loop.run_until_complete(main())
