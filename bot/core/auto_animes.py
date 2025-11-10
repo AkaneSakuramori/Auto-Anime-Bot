@@ -24,9 +24,19 @@ btn_formatter = {
     '360':'𝟯𝟲𝟬𝗽'
 }
 
+async def fetch_animes():
+    """
+    This function is kept as a placeholder to maintain compatibility with the scheduler.
+    Since we're moving to direct file uploads, this won't actively fetch anime anymore.
+    """
+    await rep.report("Bot is ready to process direct file uploads!", "info")
+    while True:
+        await asleep(60)  # Sleep to prevent high CPU usage
+        # The actual processing will be triggered by file uploads
+
 async def process_file(message, name=None):
     try:
-        if not name:
+        if not name and message.document:
             name = message.document.file_name
             
         aniInfo = TextEditor(name)
