@@ -18,10 +18,9 @@ from .tguploader import TgUploader
 from .reporter import rep
 
 btn_formatter = {
-    '1080':'𝓸𝓷𝓽',
-    '720':'𝓸𝓮𝓷𝓽',
-    '480':'𝓹𝓸𝓮𝓷𝓽',
-    '360':'𝓸𝓲𝓫𝓼'
+    '1080':'1080p',
+    '720':'720p',
+    '480':'480p'
 }
 
 async def fetch_animes():
@@ -37,48 +36,36 @@ async def process_file(message, name=None):
     try:
         if not name and message.document:
             name = message.document.file_name
-            
         aniInfo = TextEditor(name)
         await aniInfo.load_anilist()
-        
         post_msg = await bot.send_photo(
             Var.MAIN_CHANNEL,
             photo=await aniInfo.get_poster(),
             caption=await aniInfo.get_caption()
         )
-        
         await asleep(1.5)
         stat_msg = await sendMessage(Var.MAIN_CHANNEL, f"‣ <b>File Name :</b> <b><i>{name}</i></b>\n\n<i>Downloading...</i>")
-        
         file_handler = FileHandler("./downloads")
         dl = await file_handler.save_file(message, name)
-        
         if not dl or not ospath.exists(dl):
             await rep.report(f"File Download Failed", "error")
             await stat_msg.delete()
             return
-
         post_id = post_msg.id
         ffEvent = Event()
         ff_queued[post_id] = ffEvent
-        
         if ffLock.locked():
             await editMessage(stat_msg, f"‣ <b>File Name :</b> <b><i>{name}</i></b>\n\n<i>Queued to Encode...</i>")
             await rep.report("Added Task to Queue...", "info")
-            
         await ffQueue.put(post_id)
         await ffEvent.wait()
-        
         await ffLock.acquire()
         btns = []
-        
         for qual in Var.QUALS:
             filename = await aniInfo.get_upname(qual)
-            await editMessage(stat_msg, f"‣ <b>File Name :</b> <b><i>{name}</i></b>\n\n<i>Ready to Encode...</i>")
-            
+            await editMessage(stat_msg, f"‣ <b>File Name :</b> <b><i>{filename}</i></b>\n\n<i>Ready to Encode...</i>")
             await asleep(1.5)
             await rep.report("Starting Encode...", "info")
-            
             try:
                 out_path = await FFEncoder(stat_msg, dl, filename, qual).start_encode()
             except Exception as e:
@@ -86,12 +73,9 @@ async def process_file(message, name=None):
                 await stat_msg.delete()
                 ffLock.release()
                 return
-                
             await rep.report("Successfully Compressed Now Going To Upload...", "info")
-            
             await editMessage(stat_msg, f"‣ <b>File Name :</b> <b><i>{filename}</i></b>\n\n<i>Ready to Upload...</i>")
             await asleep(1.5)
-            
             try:
                 msg = await TgUploader(stat_msg).upload(out_path, qual)
             except Exception as e:
@@ -99,31 +83,24 @@ async def process_file(message, name=None):
                 await stat_msg.delete()
                 ffLock.release()
                 return
-                
             await rep.report("Successfully Uploaded File to Telegram...", "info")
-            
             msg_id = msg.id
             link = f"https://telegram.me/{(await bot.get_me()).username}?start={await encode('get-'+str(msg_id * abs(Var.FILE_STORE)))}"
-            
             if post_msg:
                 if len(btns) != 0 and len(btns[-1]) == 1:
                     btns[-1].insert(1, InlineKeyboardButton(f"{btn_formatter[qual]} - {convertBytes(msg.document.file_size)}", url=link))
                 else:
                     btns.append([InlineKeyboardButton(f"{btn_formatter[qual]} - {convertBytes(msg.document.file_size)}", url=link)])
                 await editMessage(post_msg, post_msg.caption.html if post_msg.caption else "", InlineKeyboardMarkup(btns))
-                
             bot_loop.create_task(extra_utils(msg_id, out_path))
-            
         ffLock.release()
         await stat_msg.delete()
         await aioremove(dl)
-        
     except Exception as error:
         await rep.report(format_exc(), "error")
 
 async def extra_utils(msg_id, out_path):
     msg = await bot.get_messages(Var.FILE_STORE, message_ids=msg_id)
-    
     if Var.BACKUP_CHANNEL != 0:
         for chat_id in Var.BACKUP_CHANNEL.split():
             await msg.copy(int(chat_id))
