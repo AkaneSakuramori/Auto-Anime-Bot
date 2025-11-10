@@ -4,6 +4,8 @@ from random import choice
 from asyncio import sleep as asleep
 from aiohttp import ClientSession
 from anitopy import parse
+from re import sub as re_sub
+from re import search as re_search
 
 from bot import Var, bot
 from .ffencoder import ffargs
@@ -14,8 +16,8 @@ CAPTION_FORMAT = """
 <b>㊂ <i>{title}</i></b>
 <b>╭┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅</b>
 <b>⊙</b> <i>Genres:</i> <i>{genres}</i>
-<b>⊙</b> <i>Status:</i> <i>RELEASING</i> 
-<b>⊙</b> <i>Source:</i> <i>Subsplease</i>
+<b>⊙</b> <i>Status:</i> <i>{status}</i> 
+<b>⊙</b> <i>Source:</i> <i>{source}</i>
 <b>⊙</b> <i>Episode:</i> <i>{ep_no}</i>
 <b>⊙</b> <i>Audio: Japanese</i>
 <b>⊙</b> <i>Subtitle: English</i>
@@ -25,7 +27,20 @@ CAPTION_FORMAT = """
 ╰┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅┅
 """
 
-GENRES_EMOJI = {"Action": "👊", "Adventure": choice(['🪂', '🧗‍♀']), "Comedy": "🤣", "Drama": " 🎭", "Ecchi": choice(['💋', '🥵']), "Fantasy": choice(['🧞', '🧞‍♂', '🧞‍♀','🌗']), "Hentai": "🔞", "Horror": "☠", "Mahou Shoujo": "☯", "Mecha": "🤖", "Music": "🎸", "Mystery": "🔮", "Psychological": "♟", "Romance": "💞", "Sci-Fi": "🛸", "Slice of Life": choice(['☘','🍁']), "Sports": "⚽️", "Supernatural": "🫧", "Thriller": choice(['🥶', '🔪','🤯'])}
+GENRES_EMOJI = {
+    "Action": "👊",
+    "Adventure": choice(['🪂', '🧗‍♀']),
+    "Comedy": "🤣",
+    "Drama": "🎭",
+    "Ecchi": choice(['💋', '🥵']),
+    "Fantasy": choice(['🧞', '🧞‍♂', '🧞‍♀']),
+    "Romance": "💕",
+    "Sci-Fi": "🛰️",
+    "Slice of Life": "☕",
+    "Mystery": "🕵️",
+    "Supernatural": "👻",
+    "Thriller": "🔪"
+}
 
 ANIME_GRAPHQL_QUERY = """
 query ($id: Int, $search: String, $seasonYear: Int) {
@@ -41,67 +56,16 @@ query ($id: Int, $search: String, $seasonYear: Int) {
     format
     status(version: 2)
     description(asHtml: false)
-    startDate {
-      year
-      month
-      day
-    }
-    endDate {
-      year
-      month
-      day
-    }
+    startDate { year month day }
+    endDate { year month day }
     season
     seasonYear
     episodes
     duration
-    chapters
-    volumes
-    countryOfOrigin
-    source
-    hashtag
-    trailer {
-      id
-      site
-      thumbnail
-    }
-    updatedAt
-    coverImage {
-      large
-    }
-    bannerImage
+    coverImage { large }
     genres
     synonyms
     averageScore
-    meanScore
-    popularity
-    trending
-    favourites
-    studios {
-      nodes {
-         name
-         siteUrl
-      }
-    }
-    isAdult
-    nextAiringEpisode {
-      airingAt
-      timeUntilAiring
-      episode
-    }
-    airingSchedule {
-      edges {
-        node {
-          airingAt
-          timeUntilAiring
-          episode
-        }
-      }
-    }
-    externalLinks {
-      url
-      site
-    }
     siteUrl
   }
 }
@@ -112,56 +76,50 @@ class AniLister:
         self.__api = "https://graphql.anilist.co"
         self.__ani_name = anime_name
         self.__ani_year = year
-        self.__vars = {'search' : self.__ani_name, 'seasonYear': self.__ani_year}
-    
-    def __update_vars(self, year=True) -> None:
-        if year:
-            self.__ani_year -= 1
-            self.__vars['seasonYear'] = self.__ani_year
-        else:
-            self.__vars = {'search' : self.__ani_name}
-    
-    async def post_data(self):
+        self.__vars = {'search': self.__ani_name, 'seasonYear': self.__ani_year}
+
+    async def __post(self):
         async with ClientSession() as sess:
             async with sess.post(self.__api, json={'query': ANIME_GRAPHQL_QUERY, 'variables': self.__vars}) as resp:
-                return (resp.status, await resp.json(), resp.headers)
-        
+                return resp.status, await resp.json(), resp.headers
+
     async def get_anidata(self):
-        res_code, resp_json, res_heads = await self.post_data()
-        while res_code == 404 and self.__ani_year > 2020:
-            self.__update_vars()
+        res_code, resp_json, res_heads = await self.__post()
+        while res_code == 404 and self.__ani_year > 2000:
+            self.__ani_year -= 1
+            self.__vars['seasonYear'] = self.__ani_year
             await rep.report(f"AniList Query Name: {self.__ani_name}, Retrying with {self.__ani_year}", "warning", log=False)
-            res_code, resp_json, res_heads = await self.post_data()
-        
+            res_code, resp_json, res_heads = await self.__post()
         if res_code == 404:
-            self.__update_vars(year=False)
-            res_code, resp_json, res_heads = await self.post_data()
-        
+            self.__vars = {'search': self.__ani_name}
+            res_code, resp_json, res_heads = await self.__post()
         if res_code == 200:
             return resp_json.get('data', {}).get('Media', {}) or {}
-        elif res_code == 429:
-            f_timer = int(res_heads['Retry-After'])
-            await rep.report(f"AniList API FloodWait: {res_code}, Sleeping for {f_timer} !!", "error")
+        if res_code == 429:
+            f_timer = int(res_heads.get('Retry-After', 5))
+            await rep.report(f"AniList API FloodWait: {res_code}, Sleeping for {f_timer}", "warning")
             await asleep(f_timer)
             return await self.get_anidata()
-        elif res_code in [500, 501, 502]:
-            await rep.report(f"AniList Server API Error: {res_code}, Waiting 5s to Try Again !!", "error")
+        if res_code in (500, 501, 502):
+            await rep.report(f"AniList Server Error: {res_code}, retrying", "warning")
             await asleep(5)
             return await self.get_anidata()
-        else:
-            await rep.report(f"AniList API Error: {res_code}", "error", log=False)
-            return {}
-    
+        await rep.report(f"AniList API Error: {res_code}", "error", log=False)
+        return {}
+
 class TextEditor:
     def __init__(self, name):
-        self.__name = name
+        self.__name = name or ""
         self.adata = {}
-        self.pdata = parse(name)
+        self.pdata = parse(self.__name or "")
 
+    @handle_logs
     async def load_anilist(self):
         cache_names = []
-        for option in [(False, False), (False, True), (True, False), (True, True)]:
+        for option in ((False, False), (False, True), (True, False), (True, True)):
             ani_name = await self.parse_name(*option)
+            if not ani_name:
+                continue
             if ani_name in cache_names:
                 continue
             cache_names.append(ani_name)
@@ -171,57 +129,75 @@ class TextEditor:
 
     @handle_logs
     async def get_id(self):
-        if (ani_id := self.adata.get('id')) and str(ani_id).isdigit():
+        ani_id = self.adata.get('id')
+        if ani_id and str(ani_id).isdigit():
             return ani_id
-            
+        return None
+
     @handle_logs
     async def parse_name(self, no_s=False, no_y=False):
-        anime_name = self.pdata.get("anime_title")
+        anime_name = self.pdata.get("anime_title") or ""
         anime_season = self.pdata.get("anime_season")
         anime_year = self.pdata.get("anime_year")
-        if anime_name:
-            pname = anime_name
-            if not no_s and self.pdata.get("episode_number") and anime_season:
-                pname += f" {anime_season}"
-            if not no_y and anime_year:
-                pname += f" {anime_year}"
-            return pname
-        return anime_name
-        
+        if not anime_name:
+            anime_name = self.__name
+        anime_name = re_sub(r"\[.*?\]", " ", anime_name)
+        anime_name = re_sub(r"\(.*?\)", " ", anime_name)
+        anime_name = anime_name.replace("_", " ").replace(".", " ").strip()
+        anime_name = re_sub(r"@[\w-]+", "", anime_name).strip()
+        anime_name = re_sub(r"\s{2,}", " ", anime_name).strip()
+        pname = anime_name
+        if not no_s and self.pdata.get("episode_number") and anime_season:
+            pname = f"{pname} {anime_season}"
+        if not no_y and anime_year:
+            pname = f"{pname} {anime_year}"
+        return pname
+
     @handle_logs
     async def get_poster(self):
-        if anime_id := await self.get_id():
+        anime_id = await self.get_id()
+        if anime_id:
             return f"https://img.anili.st/media/{anime_id}"
-        return "https://telegra.ph/file/112ec08e59e73b6189a20.jpg"
-        
+        return Var.THUMB or "https://telegra.ph/file/112ec08e59e73b6189a20.jpg"
+
     @handle_logs
     async def get_upname(self, qual=""):
-        anime_name = self.pdata.get("anime_title")
-        codec = 'HEVC' if 'libx265' in ffargs[qual] else 'AV1' if 'libaom-av1' in ffargs[qual] else ''
-        lang = 'Multi-Audio' if 'multi-audio' in self.__name.lower() else 'Sub'
-        anime_season = str(ani_s[-1]) if (ani_s := self.pdata.get('anime_season', '01')) and isinstance(ani_s, list) else str(ani_s)
-        if anime_name and self.pdata.get("episode_number"):
-            titles = self.adata.get('title', {})
-            return f"""[S{anime_season}-{'E'+str(self.pdata.get('episode_number')) if self.pdata.get('episode_number') else ''}] {titles.get('english') or titles.get('romaji') or titles.get('native')} {'['+qual+'p]' if qual else ''} {'['+codec.upper()+'] ' if codec else ''}{'['+lang+']'} {Var.BRAND_UNAME}.mkv"""
+        anime_name = self.pdata.get("anime_title") or ""
+        codec = "HEVC" if "libx265" in ffargs.get(qual, "") else "AV1" if "libaom-av1" in ffargs.get(qual, "") else ""
+        lang = "Multi-Audio" if "multi-audio" in self.__name.lower() else "Sub"
+        ani_s = self.pdata.get('anime_season', '01')
+        if isinstance(ani_s, list):
+            anime_season = str(ani_s[-1])
+        else:
+            anime_season = str(ani_s)
+        ep_no = self.pdata.get("episode_number")
+        titles = self.adata.get('title', {}) or {}
+        title_main = titles.get('english') or titles.get('romaji') or titles.get('native') or anime_name
+        if anime_name and ep_no:
+            return f"[S{anime_season}-E{ep_no}] {title_main} [{codec}] [{lang}]"
+        return f"{title_main} [{codec}] [{lang}]"
 
     @handle_logs
     async def get_caption(self):
-        sd = self.adata.get('startDate', {})
+        sd = self.adata.get('startDate', {}) or {}
         startdate = f"{month_name[sd['month']]} {sd['day']}, {sd['year']}" if sd.get('day') and sd.get('year') else ""
-        ed = self.adata.get('endDate', {})
+        ed = self.adata.get('endDate', {}) or {}
         enddate = f"{month_name[ed['month']]} {ed['day']}, {ed['year']}" if ed.get('day') and ed.get('year') else ""
-        titles = self.adata.get("title", {})
-        
+        titles = self.adata.get("title", {}) or {}
+        title_text = titles.get('english') or titles.get('romaji') or titles.get('native') or (self.pdata.get("anime_title") or self.__name)
+        genres = self.adata.get("genres") or []
+        genres_list = ", ".join((GENRES_EMOJI.get(g, "") + " " + g).strip() for g in genres) or "N/A"
+        avg_score = f"{self.adata.get('averageScore')}%" if self.adata.get('averageScore') else "N/A"
+        status = self.adata.get("status") or "N/A"
+        plot = self.adata.get("description") or ""
+        if plot and len(plot) > 200:
+            plot = plot[:200] + "..."
+        ep_no = self.pdata.get("episode_number") or "N/A"
         return CAPTION_FORMAT.format(
-                title=titles.get('english') or titles.get('romaji') or title.get('native'),
-                form=self.adata.get("format") or "N/A",
-                genres=", ".join(f"{GENRES_EMOJI[x]} #{x.replace(' ', '_').replace('-', '_')}" for x in (self.adata.get('genres') or [])),
-                avg_score=f"{sc}%" if (sc := self.adata.get('averageScore')) else "N/A",
-                status=self.adata.get("status") or "N/A",
-                start_date=startdate or "N/A",
-                end_date=enddate or "N/A",
-                t_eps=self.adata.get("episodes") or "N/A",
-                plot= (desc if (desc := self.adata.get("description") or "N/A") and len(desc) < 200 else desc[:200] + "..."),
-                ep_no=self.pdata.get("episode_number"),
-                cred=Var.BRAND_UNAME,
-            )
+            title=title_text,
+            genres=genres_list,
+            status=status,
+            source=self.adata.get("source") or "Subsplease",
+            ep_no=ep_no,
+            cred=Var.BRAND_UNAME
+      )
