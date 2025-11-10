@@ -18,26 +18,18 @@ from .tguploader import TgUploader
 from .reporter import rep
 
 btn_formatter = {
-    '1080':'𝟭𝟬𝟴𝟬𝗽', 
-    '720':'𝟳𝟮𝟬𝗽',
-    '480':'𝟰𝟴𝟬𝗽',
-    '360':'𝟯𝟲𝟬𝗽'
+    '1080':'𝓸𝓷𝓽',
+    '720':'𝓸𝓮𝓷𝓽',
+    '480':'𝓹𝓸𝓮𝓷𝓽',
+    '360':'𝓸𝓲𝓫𝓼'
 }
 
 async def fetch_animes():
-    """
-    This function is kept as a placeholder to maintain compatibility with the scheduler.
-    Since we're moving to direct file uploads, this won't actively fetch anime anymore.
-    """
     await rep.report("Bot is ready to process direct file uploads!", "info")
     while True:
-        await asleep(60)  # Sleep to prevent high CPU usage
+        await asleep(60)
 
 async def get_animes(name, force=False):
-    """
-    Legacy function maintained for compatibility.
-    Now redirects to process_file for direct file handling.
-    """
     await rep.report("Using direct file processing instead of anime fetching", "info")
     return None
 
