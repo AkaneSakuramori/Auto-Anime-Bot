@@ -3,6 +3,7 @@ from logging import INFO, ERROR, FileHandler, StreamHandler, basicConfig, getLog
 from traceback import format_exc
 from asyncio import Queue, Lock
 
+from pyrogram import filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import Client
 from pyrogram.enums import ParseMode
