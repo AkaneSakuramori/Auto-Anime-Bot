@@ -1,10 +1,11 @@
+from os import path as ospath, execl, kill
+from sys import executable
+from signal import SIGKILL
+from aiohttp import web
 from asyncio import create_task, create_subprocess_exec, create_subprocess_shell, run as asyrun, all_tasks, gather, sleep as asleep
 from aiofiles import open as aiopen
 from pyrogram import idle
 from pyrogram.filters import command, user
-from os import path as ospath, execl, kill
-from sys import executable
-from signal import SIGKILL
 from pyrogram.errors import ChatIdInvalid, ChannelInvalid
 
 from bot import bot, Var, bot_loop, sch, LOGS, ffQueue, ffLock, ffpids_cache, ff_queued
@@ -12,6 +13,20 @@ from bot.core.auto_animes import fetch_animes
 from bot.core.func_utils import clean_up, new_task, editMessage
 from bot.modules.up_posts import upcoming_animes
 
+# Health check endpoint for Render
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_health_server():
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    app.router.add_get('/', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(Var.PORT) if hasattr(Var, 'PORT') and Var.PORT else 8080
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    LOGS.info(f"🌐 Health check server started on port {port}")
 
 async def preload_chats():
     chat_ids = []
@@ -30,7 +45,6 @@ async def preload_chats():
                 continue
     if Var.FSUB_CHATS:
         chat_ids.extend(Var.FSUB_CHATS)
-
     LOGS.info(f"🔄 Preloading {len(chat_ids)} chat(s) for peer cache...")
     for cid in chat_ids:
         try:
@@ -42,10 +56,9 @@ async def preload_chats():
             LOGS.error(f"⚠️ Failed to preload {cid}: {e}")
         await asleep(1)
 
-
 @bot.on_message(command('restart') & user(Var.ADMINS))
 @new_task
-async def restart(client, message):
+async def restart_bot(client, message):
     rmessage = await message.reply('<i>Restarting...</i>')
     if sch.running:
         sch.shutdown(wait=False)
@@ -63,7 +76,6 @@ async def restart(client, message):
         await f.write(f"{rmessage.chat.id}\n{rmessage.id}\n")
     execl(executable, executable, "-m", "bot")
 
-
 async def restart():
     if ospath.isfile(".restartmsg"):
         with open(".restartmsg") as f:
@@ -72,7 +84,6 @@ async def restart():
             await bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text="<i>Restarted !</i>")
         except Exception as e:
             LOGS.error(e)
-
 
 async def queue_loop():
     LOGS.info("Queue Loop Started !!")
@@ -86,7 +97,6 @@ async def queue_loop():
                 ffQueue.task_done()
         await asleep(10)
 
-
 async def main():
     sch.add_job(upcoming_animes, "cron", hour=0, minute=30)
     await bot.start()
@@ -94,7 +104,11 @@ async def main():
     await restart()
     LOGS.info('Auto Anime Bot Started!')
     sch.start()
+    
+    # Start health check server
+    bot_loop.create_task(start_health_server())
     bot_loop.create_task(queue_loop())
+    
     await fetch_animes()
     await idle()
     LOGS.info('Auto Anime Bot Stopped!')
@@ -103,7 +117,6 @@ async def main():
         task.cancel()
     await clean_up()
     LOGS.info('Finished AutoCleanUp !!')
-
 
 if __name__ == '__main__':
     bot_loop.run_until_complete(main())
