@@ -10,6 +10,7 @@ feedparser
 psutil
 pycountry
 git+https://github.com/Mayuri-Chan/pyrofork
+git+https://github.com/ps-updates/pyrogram
 python-dotenv
 tgcrypto
 torrentp==0.1.7
