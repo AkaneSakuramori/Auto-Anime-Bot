@@ -12,6 +12,7 @@ pyrofork==2.3.45
 python-dotenv
 tgcrypto
 torrentp==0.1.7
-git+https://github.com/kaif-00z/html-telegraph-poster
 uvloop
-lxml[html_clean]
+lxml
+lxml_html_clean
+git+https://github.com/kaif-00z/html-telegraph-poster
