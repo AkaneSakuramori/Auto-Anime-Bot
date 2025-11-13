@@ -9,7 +9,7 @@ pymongo==4.5.0
 feedparser
 psutil
 pycountry
-pyrofork==2.3.61
+git+https://github.com/Mayuri-Chan/pyrofork
 python-dotenv
 tgcrypto
 torrentp==0.1.7
